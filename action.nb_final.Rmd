@@ -1,0 +1,435 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+##THINGS WE SHOULD DO
+#1. DO SOME EDA.
+#2.ARBITRALRY LOOK AT A COUPLE COMPA
+#RISONS TO ADD CONTEXT. I,E LOOK AT A SPECIFIC ACTOR/ACTRESS AND COMPARE AND BE LIKE TOM CRUISE IS LIKELY TO MAKE 3X MORE MONEY THAN BRAD PITT OR SOMETHING.
+#3 LOOK AT BY VARIOUS GROUPINGS, I,E STUIOS, ETC.
+#SINCE THE METRIC IS LIFETIME GROSS, DOES IT MAKE SENSE TO DIVDE BY...# OF MOVIES? # OF YEARS, ETC ETC, TO GET AN AVERAGE.
+
+```
+
+
+```{r}
+library(gbm)
+library(glmnet)
+
+library(pdp)
+library(ggplot2)
+
+```
+
+```{r}
+df <- read.csv('~/Desktop/Hon/School/498/final_action_v2.csv')
+df <- subset(df, startYear >=2010 & startYear < 2019 )
+df<-subset(df, profession1 == 'actor' | profession1 == 'actress')
+df$firstname <- gsub("^(\\w+).*", "\\1", df$primaryName)
+```
+
+
+
+
+
+```{r}
+sort(table(df$firstname), decreasing = TRUE)
+```
+
+```{r}
+sort(table(df$title), decreasing = TRUE)
+
+```
+
+```{r}
+subset_data <- subset(df, title == "Black Panther")
+subset_data
+
+```
+
+
+```{r}
+head(df)
+
+```
+
+
+
+
+```{r}
+sort(table(df$genres2), decreasing = TRUE)
+```
+```{r}
+sort(table(df$studio), decreasing = TRUE)
+```
+
+```{r}
+first_names <- gsub("^(\\w+).*", "\\1", names)
+```
+
+
+
+```{r}
+df <- subset(df, runtimeMinutes != "\\N") # remove wierd value
+df$runtimeMinutes <-as.integer(df$runtimeMinutes) #convert to number
+df$startYear <-as.integer(df$startYear) 
+df$age <- 2023-df$startYear #age
+df$lifetime_gross.scaled <- scale(df$lifetime_gross) #scale dependent variable
+df$genres2 <- as.factor(df$genres2) #as factor
+df$studio <- as.factor(df$studio) # as factor
+df$profession1 <- as.factor(df$profession1)
+
+# grouping various features
+
+df$studio.grouped <- ifelse(df$studio == "WB", "WB",
+                             ifelse(df$studio == "Fox", "Fox",
+                                    ifelse(df$studio == "Uni.", "Uni.",
+                                           ifelse(df$studio == "Par.", "Sony",
+                                                  ifelse(df$studio == "MGM", "MGM", "other")))))
+df$studio.grouped <- as.factor(df$studio.grouped)
+
+
+df$genres2.grouped <- ifelse(df$genres2 == "Adventure", "Adventure",
+                             ifelse(df$genres2 == "Crime", "Crime",
+                                    ifelse(df$genres2 == "Comedy", "Comedy",
+                                           ifelse(df$genres2 == "Sci-Fi", "Sci-Fi",
+                                                  ifelse(df$genres2 == "Thriller", "Thriller", "Other")))))
+
+df$genres2.grouped <- as.factor(df$genres2.grouped)
+
+independent.vars <- c('startYear', 'runtimeMinutes', 'studio.grouped','genres2.grouped', 'profession1')
+dependent.vars <- c('lifetime_gross')
+```
+
+```{r}
+head(df)
+#model.data <- df[, subset]
+
+```
+
+```{r}
+x <-df[, independent.vars]
+y <- df[,dependent.vars]
+
+
+
+set.seed(42)
+
+# Perform the train-test split
+train_indices <- sample(nrow(df), 0.8 * nrow(df))
+train_data <- df[train_indices, ]
+test_data <- df[-train_indices, ]
+
+
+x.train <-train_data[, independent.vars]
+y.train <- train_data[,dependent.vars]
+
+x.test <-train_data[, independent.vars]
+y.test <- train_data[,dependent.vars]
+
+
+
+
+
+```
+
+```{r}
+str(test_data)
+```
+
+
+```{r}
+# Create the bar chart for count distribution
+ggplot(df, aes(x = genres2.grouped)) +
+  geom_bar(fill = "steelblue") +
+  labs(title = "Distribution of Movie Genres",
+       x = "Genres",
+       y = "Count")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+```{r}
+# Subset data to include years after 2017
+subset_data <- subset(df, startYear > 2017)
+
+# Calculate mean by genre for the subsetted data
+ggplot(subset_data, aes(x = genres2.grouped)) +
+  geom_bar(fill = "steelblue") +
+  labs(title = "Count Distribution of Genres",
+       x = "Category",
+       y = "Count")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  facet_wrap(~ startYear, nrow = 2) +
+  scale_y_continuous(labels = scales::comma)
+
+```
+
+```{r}
+ggplot(df, aes(x = studio.grouped)) +
+  geom_bar(fill = "steelblue") +
+  labs(title = " Distribution of Movie studio",
+       x = "Studio",
+       y = "Count")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+# Create the bar chart for count distribution
+ggplot(df, aes(x = startYear)) +
+  geom_bar(fill = "steelblue") +
+  labs(title = "Count Distribution of startyear",
+       x = "Category",
+       y = "Count")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+# Create the bar chart with average line
+# Create the bar chart with average line
+
+mean_genres <- tapply(df$lifetime_gross, df$studio.grouped, mean)
+mean_genres <- data.frame(studio.grouped = names(mean_genres), mean_lifetime_gross = mean_genres)
+
+ggplot(mean_genres, aes(x = studio.grouped, y = mean_lifetime_gross)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_hline(yintercept = mean(mean_genres$mean_lifetime_gross), color = "red", linetype = "dashed") +
+  labs(title = "Mean Lifetime Gross by Studio",
+       x = "Studio",
+       y = "Mean Lifetime Gross")+  scale_y_continuous(labels = scales::comma)
+```
+
+```{r}
+# Subset data to include years after 2017
+subset_data <- subset(df, startYear > 2009)
+
+# Calculate mean by genre for the subsetted data
+mean_genres <- aggregate(lifetime_gross ~ genres2.grouped + startYear, subset_data, mean)
+
+# Plot with subset and facet
+ggplot(mean_genres, aes(x = genres2.grouped, y = lifetime_gross)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_hline(yintercept = mean(mean_genres$lifetime_gross), color = "red", linetype = "dashed") +
+  labs(title = "Mean Lifetime Gross by Genre",
+       x = "Genre",
+       y = "Mean Lifetime Gross") +
+  facet_wrap(~ startYear, nrow = 2) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(labels = scales::comma)
+
+
+
+
+
+```
+
+```{r}
+# Subset data to include years after 2017
+subset_data <- subset(df, startYear > 2009)
+
+# Calculate mean by studio for the subsetted data
+mean_studios <- aggregate(lifetime_gross ~ genres2.grouped + startYear, subset_data, mean)
+
+# Plot line chart with legend for studios
+ggplot(mean_studios, aes(x = startYear, y = lifetime_gross, color = genres2.grouped)) +
+  geom_line() +
+  geom_hline(yintercept = mean(mean_studios$lifetime_gross), color = "red", linetype = "dashed") +
+  labs(title = "Mean Lifetime Gross by genres",
+       x = "Year",
+       y = "Mean Lifetime Gross") +
+  scale_color_manual(values = rainbow(length(unique(mean_studios$genres2.grouped)))) +
+  theme(legend.position = "right")
+```
+```{r}
+subset_data <- subset(df, startYear > 2009)
+
+# Calculate mean by genre for the subsetted data
+mean_genres <- aggregate(runtimeMinutes ~ genres2.grouped + startYear, subset_data, mean)
+
+# Plot with subset and facet
+ggplot(mean_genres, aes(x = genres2.grouped, y = runtimeMinutes)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_hline(yintercept = mean(mean_genres$runtimeMinutes), color = "red", linetype = "dashed") +
+  labs(title = "Mean minutes by Genre",
+       x = "Genre",
+       y = "Mean minutes") +
+  facet_wrap(~ startYear, nrow = 2) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(labels = scales::comma)
+```
+
+
+```{r}
+# Create the bar chart with average line
+# Create the bar chart with average line
+
+mean_genres <- tapply(df$lifetime_gross, df$studio.grouped, mean)
+mean_genres <- data.frame(studio.grouped = names(mean_genres), mean_lifetime_gross = mean_genres)
+
+ggplot(mean_genres, aes(x = studio.grouped, y = mean_lifetime_gross)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_hline(yintercept = mean(mean_genres$mean_lifetime_gross), color = "red", linetype = "dashed") +
+  labs(title = "Mean Lifetime Gross by studio",
+       x = "studio",
+       y = "Mean Lifetime Gross") +   scale_y_continuous(labels = scales::comma)
+```
+
+
+```{r}
+# Subset data to include years after 2017
+subset_data <- subset(df, startYear > 2009)
+
+# Calculate mean by genre for the subsetted data
+mean_genres <- aggregate(lifetime_gross ~ studio.grouped + startYear, subset_data, mean)
+
+# Plot with subset and facet
+ggplot(mean_genres, aes(x = studio.grouped, y = lifetime_gross)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_hline(yintercept = mean(mean_genres$lifetime_gross), color = "red", linetype = "dashed") +
+  labs(title = "Mean Lifetime Gross by studio",
+       x = "Genre",
+       y = "Mean Lifetime Gross") +
+  facet_wrap(~ startYear, nrow = 2) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(labels = scales::comma)
+
+```
+```{r}
+# Subset data to include years after 2017
+subset_data <- subset(df, startYear > 2009)
+
+# Calculate mean by studio for the subsetted data
+mean_studios <- aggregate(lifetime_gross ~ studio.grouped + startYear, subset_data, mean)
+
+# Plot line chart with legend for studios
+ggplot(mean_studios, aes(x = startYear, y = lifetime_gross, color = studio.grouped)) +
+  geom_line() +
+  geom_hline(yintercept = mean(mean_studios$lifetime_gross), color = "red", linetype = "dashed") +
+  labs(title = "Mean Lifetime Gross by Studio",
+       x = "Year",
+       y = "Mean Lifetime Gross") +
+  scale_color_manual(values = rainbow(length(unique(mean_studios$studio.grouped)))) +
+  theme(legend.position = "right") +   scale_y_continuous(labels = scales::comma)
+```
+```{r}
+subset_data <- subset(df, startYear > 2009)
+
+# Calculate mean by genre for the subsetted data
+mean_genres <- aggregate(runtimeMinutes ~ studio.grouped + startYear, subset_data, mean)
+
+# Plot with subset and facet
+ggplot(mean_genres, aes(x = studio.grouped, y = runtimeMinutes)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_hline(yintercept = mean(mean_genres$runtimeMinutes), color = "red", linetype = "dashed") +
+  labs(title = "Mean minutes by studio",
+       x = "studio",
+       y = "Mean minutes") +
+  facet_wrap(~ startYear, nrow = 2) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(labels = scales::comma)
+```
+
+
+```{r}
+model <- gbm(y.train ~ ., data = x.train, distribution = "gaussian", n.trees = 50, interaction.depth = 3)
+```
+
+```{r}
+# Assuming 'x.test' is your test dataset and 'y.test' is the corresponding actual values
+
+# Create a data frame with actual and predicted values
+comparison <- data.frame(Category = x.test$studio.grouped, Actual = y.test, Predicted = predictions)
+
+# Sum and group the values by 'studio.grouped' category for actual and predicted
+comparison_sum_actual <- aggregate(Actual ~ Category, data = comparison, FUN = sum)
+comparison_sum_predicted <- aggregate(Predicted ~ Category, data = comparison, FUN = sum)
+
+# Merge the actual and predicted data frames
+comparison_merged <- merge(comparison_sum_actual, comparison_sum_predicted, by = "Category")
+
+# Plot the summed and grouped values for actual and predicted side by side
+barplot(height = t(comparison_merged[, c("Actual", "Predicted")]), beside = TRUE,
+        col = c("blue", "red"), names.arg = comparison_merged$Category,
+        main = "Actual vs Predicted by Studios", xlab = "Category (studio.grouped)", ylab = "revenue")
+legend("topright", legend = c("Actual", "Predicted"), fill = c("blue", "red"))+  scale_y_continuous(labels = scales::comma)
+
+
+
+
+
+
+```
+
+```{r}
+# Assuming 'x.test' is your test dataset and 'y.test' is the corresponding actual values
+
+# Create a data frame with actual and predicted values
+comparison <- data.frame(Category = x.test$genres2.grouped, Actual = y.test, Predicted = predictions)
+
+# Sum and group the values by 'studio.grouped' category for actual and predicted
+comparison_sum_actual <- aggregate(Actual ~ Category, data = comparison, FUN = sum)
+comparison_sum_predicted <- aggregate(Predicted ~ Category, data = comparison, FUN = sum)
+
+# Merge the actual and predicted data frames
+comparison_merged <- merge(comparison_sum_actual, comparison_sum_predicted, by = "Category")
+
+# Plot the summed and grouped values for actual and predicted side by side
+barplot(height = t(comparison_merged[, c("Actual", "Predicted")]), beside = TRUE,
+        col = c("blue", "red"), names.arg = comparison_merged$Category,
+        main = "Actual vs Predicted by Genres", xlab = "Category (Genres)", ylab = "Sum")
+legend("topright", legend = c("Actual", "Predicted"), fill = c("blue", "red"))
+
+```
+
+
+
+```{r}
+comparison_matrix_predicted
+```
+
+
+
+```{r}
+summary(model)
+```
+```{r}
+```
+
+
+```{r}
+plot.gbm(model, i.var = "studio.grouped", n.trees = 50, type = "link")
+```
+
+
+```{r}
+```
+
+```{r}
+plot.gbm(model, i.var = "runtimeMinutes", n.trees = 50, type = "link")
+```
+
+```{r}
+plot.gbm(model, i.var = "genres2.grouped", n.trees = 50, type = "link")
+```
+
+
+
+```{r}
+plot.gbm(model, i.var = "startYear", n.trees = 50, type = "link")
+
+```
+```{r}
+plot.gbm(model, i.var = c("genres2.grouped", "studio.grouped"), n.trees = 50, type = "link")
+
+```
+```{r}
+plot.gbm(model, i.var = c("genres2.grouped", "runtimeMinutes"), n.trees = 50, type = "link")
+
+```
+```{r}
+model <- glm(df$lifetime_gross ~ df$firstname, data = df, family = gaussian)
+
+
+
+```
+
